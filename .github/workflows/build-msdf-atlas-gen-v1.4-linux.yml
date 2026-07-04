@@ -1,6 +1,7 @@
 # Сборка ПОЛНОСТЬЮ СТАТИЧЕСКОГО msdf-atlas-gen v1.4 (Linux x86_64) для пина в домене.
 # Отличие от предыдущего: (1) ubuntu-22.04 (низкий glibc-этаж), (2) все зависимости — из исходников STATIC,
-# (3) `-static` линковка → бинарь без glibc/.so-зависимостей, запускается ВЕЗДЕ (философия пина basisu/ffmpeg-static),
+# (3) ЧАСТИЧНЫЙ static: -static-libgcc/-static-libstdc++ + static deps (freetype/png/zlib) — glibc ДИНАМИЧЕСКИЙ.
+#     ПОЛНЫЙ -static НЕ используем: статический glibc ломает FreeType (segfault). Строим на ubuntu-22.04 → glibc floor 2.35.
 # (4) `-ffp-contract=off` — против float-дрейфа (детерминизм, панель D1), (5) пиннутые версии deps → воспроизводимо.
 name: Build msdf-atlas-gen v1.4 (static Linux x86_64)
 
@@ -23,7 +24,7 @@ jobs:
       - name: Toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build git wget tar
+          sudo apt-get install -y build-essential cmake ninja-build git wget tar fonts-dejavu-core
 
       - name: Build zlib (static)
         run: |
@@ -74,20 +75,25 @@ jobs:
             -DZLIB_INCLUDE_DIR="$PREFIX/include" \
             -DZLIB_LIBRARY="$PREFIX/lib/libz.a" \
             -DCMAKE_CXX_FLAGS="$DFLAGS" \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libgcc -static-libstdc++"
 
       - name: Build
         run: cmake --build src/build --config Release
 
-      - name: Verify — MUST быть fully static
+      - name: Verify (частичный static + РЕАЛЬНЫЙ смоук-рендер)
         run: |
           BIN=src/build/bin/msdf-atlas-gen
           file "$BIN"
-          # у полностью статического ldd печатает "not a dynamic executable" и выходит ненулём
-          if ldd "$BIN" 2>&1 | grep -q "not a dynamic executable"; then echo "OK: fully static"; else echo "FAIL: не static!"; ldd "$BIN"; exit 1; fi
-          "$BIN" -version || "$BIN" 2>&1 | head -3
-          echo "GLIBC-требования (должно быть пусто у static):"
-          objdump -T "$BIN" 2>/dev/null | grep -o "GLIBC_[0-9.]*" | sort -uV || echo "(нет — static)"
+          echo "=== .so-зависимости (допустим ТОЛЬКО glibc: libc/libm/ld-linux) ==="
+          ldd "$BIN" || true
+          BAD=$(ldd "$BIN" 2>/dev/null | grep -iE "libfreetype|libpng|libstdc\\+\\+|libgcc_s|libz\\.so" || true)
+          if [ -n "$BAD" ]; then echo "FAIL: остались динамические deps:"; echo "$BAD"; exit 1; fi
+          echo "OK: freetype/png/zlib/stdc++ вкомпилированы статически"
+          echo "=== glibc floor (ubuntu-22.04 → ≤ 2.35, запустится в песочнице) ==="
+          objdump -T "$BIN" | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -1
+          echo "=== СМОУК: реально генерируем атлас (НЕ -version — он segfault-ит на этом туле) ==="
+          "$BIN" -font /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf -chars "AB" -type msdf -size 32 -pxrange 4 -imageout smoke.png -json smoke.json
+          test -s smoke.png && test -s smoke.json && echo "OK: атлас сгенерирован — БИНАРЬ РАБОЧИЙ" || { echo "FAIL: бинарь не создал атлас (сломан)"; exit 1; }
 
       - name: Package
         run: |
