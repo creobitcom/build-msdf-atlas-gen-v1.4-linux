@@ -28,14 +28,14 @@ jobs:
 
       - name: Build zlib (static)
         run: |
-          wget -q https://zlib.net/fossils/zlib-${ZLIB_VER}.tar.gz
+          wget -q --timeout=30 --tries=3 https://zlib.net/fossils/zlib-${ZLIB_VER}.tar.gz
           tar xf zlib-${ZLIB_VER}.tar.gz && cd zlib-${ZLIB_VER}
           CFLAGS="$DFLAGS" ./configure --static --prefix="$PREFIX"
           make -j"$(nproc)" && make install
 
       - name: Build libpng (static, против static zlib)
         run: |
-          wget -q https://download.sourceforge.net/libpng/libpng-${PNG_VER}.tar.gz
+          wget -q --timeout=30 --tries=3 https://download.sourceforge.net/libpng/libpng-${PNG_VER}.tar.gz
           tar xf libpng-${PNG_VER}.tar.gz && cd libpng-${PNG_VER}
           CFLAGS="$DFLAGS" CPPFLAGS="-I$PREFIX/include" LDFLAGS="-L$PREFIX/lib" \
             ./configure --disable-shared --enable-static --prefix="$PREFIX"
@@ -43,7 +43,8 @@ jobs:
 
       - name: Build FreeType (static, минимальный — без harfbuzz/png/brotli/bzip2)
         run: |
-          wget -q https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VER}.tar.gz
+          wget -q --timeout=30 --tries=3 https://download.savannah.gnu.org/releases/freetype/freetype-${FT_VER}.tar.gz \
+            || wget -q --timeout=30 --tries=3 -O freetype-${FT_VER}.tar.gz https://downloads.sourceforge.net/project/freetype/freetype2/${FT_VER}/freetype-${FT_VER}.tar.gz
           tar xf freetype-${FT_VER}.tar.gz && cd freetype-${FT_VER}
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -92,7 +93,7 @@ jobs:
           echo "=== glibc floor (ubuntu-22.04 → ≤ 2.35, запустится в песочнице) ==="
           objdump -T "$BIN" | grep -o "GLIBC_[0-9.]*" | sort -uV | tail -1
           echo "=== СМОУК: реально генерируем атлас (НЕ -version — он segfault-ит на этом туле) ==="
-          "$BIN" -font /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf -chars "AB" -type msdf -size 32 -pxrange 4 -imageout smoke.png -json smoke.json
+          "$BIN" -font /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf -chars "65, 66" -type msdf -size 32 -pxrange 4 -imageout smoke.png -json smoke.json
           test -s smoke.png && test -s smoke.json && echo "OK: атлас сгенерирован — БИНАРЬ РАБОЧИЙ" || { echo "FAIL: бинарь не создал атлас (сломан)"; exit 1; }
 
       - name: Package
