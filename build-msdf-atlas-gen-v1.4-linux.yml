@@ -1,0 +1,60 @@
+name: Build msdf-atlas-gen v1.4 for Linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            cmake \
+            ninja-build \
+            build-essential \
+            pkg-config \
+            libfreetype6-dev \
+            libpng-dev \
+            zlib1g-dev
+
+      - name: Clone msdf-atlas-gen v1.4
+        run: |
+          git clone --branch v1.4 --recurse-submodules https://github.com/Chlumsky/msdf-atlas-gen.git msdf-atlas-gen
+
+      - name: Configure CMake
+        run: |
+          cmake -S msdf-atlas-gen -B msdf-atlas-gen/build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMSDF_ATLAS_USE_VCPKG=OFF \
+            -DMSDF_ATLAS_USE_SKIA=OFF \
+            -DMSDF_ATLAS_INSTALL=OFF \
+            -DMSDF_ATLAS_BUILD_STANDALONE=ON
+
+      - name: Build
+        run: |
+          cmake --build msdf-atlas-gen/build --config Release
+
+      - name: Check binary
+        run: |
+          file msdf-atlas-gen/build/bin/msdf-atlas-gen
+          ldd msdf-atlas-gen/build/bin/msdf-atlas-gen
+          msdf-atlas-gen/build/bin/msdf-atlas-gen -help | head -n 40
+
+      - name: Package binary
+        run: |
+          mkdir -p dist/msdf-atlas-gen-v1.4-linux-x86_64
+          cp msdf-atlas-gen/build/bin/msdf-atlas-gen dist/msdf-atlas-gen-v1.4-linux-x86_64/
+          chmod +x dist/msdf-atlas-gen-v1.4-linux-x86_64/msdf-atlas-gen
+          tar -czf msdf-atlas-gen-v1.4-linux-x86_64.tar.gz -C dist msdf-atlas-gen-v1.4-linux-x86_64
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msdf-atlas-gen-v1.4-linux-x86_64
+          path: msdf-atlas-gen-v1.4-linux-x86_64.tar.gz
